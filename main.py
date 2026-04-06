@@ -3,13 +3,15 @@ import json
 import fastapi
 import uvicorn
 import re
+import io
+from mutagen.id3 import ID3
+from mutagen.mp3 import MP3
+import base64
 
-
-BOT_ROOT = "http://127.0.0.1:3000"
-BOT_TOKEN = "YOUR_TOKEN_HERE"
-MUSIC_API_ROOT = "http://127.0.0.1:5000"
-GROUPS = ["YOUR_GROUP_ID(INT TYPE)"]
-FOLDER = "YOUR_FOLDER_ID"
+BOT_ROOT = "http://127.0.0.1:3000"          #OneBot HTTP地址
+BOT_TOKEN = "YOUR_TOKEN_HERE"               #OneBot的Token
+MUSIC_API_ROOT = "http://127.0.0.1:5000"    #网易云音乐API项目的地址
+GROUPS = {0:"文件夹ID"}                     #响应群号:文件夹ID
 
 try:
     health_result = requests.get(MUSIC_API_ROOT+"/health")
@@ -36,6 +38,37 @@ def search_musics(keyword:str):
     except requests.HTTPError:
         return {"success":False,"message":"服务器状态码不是200 OK","target":search}
 """
+def convert_id3_tags_in_memory(mp3_bytes: bytes) -> bytes:
+    """
+    将内存中的 MP3 字节流的 ID3 标签从 v2.4 转换为 v2.3
+    
+    Args:
+        mp3_bytes: 原始 MP3 文件的字节数据
+    
+    Returns:
+        转换后的 MP3 文件的字节数据
+    """
+    # 1. 将字节数据包装成类文件对象
+    original_file_like = io.BytesIO(mp3_bytes)
+    
+    # 2. 使用 Mutagen 打开这个内存中的文件对象
+    #    Mutagen 能直接处理类似文件的对象
+    audio = MP3(original_file_like)
+    
+    # 3. 核心操作：更新 ID3 标签结构至 v2.3 标准
+    #    这会处理 v2.4 中那些与 v2.3 不兼容的帧
+    audio.tags.update_to_v23()
+    
+    # 4. 准备一个空的 BytesIO 对象来接收新数据
+    output_buffer = io.BytesIO()
+    
+    # 5. 将转换后的标签保存到新的内存缓冲区
+    #    关键在于指定 `v2_version=3`，强制以 ID3v2.3 格式保存
+    audio.save(output_buffer, v2_version=3)
+    
+    # 6. 获取保存后的完整 MP3 字节数据并返回
+    return output_buffer.getvalue()
+
 def song_info(id,level:str="exhigh"):
     try:
         info = requests.post(MUSIC_API_ROOT+"/song",data={"url":id,"level":level,"type":"json"})
@@ -86,7 +119,7 @@ async def Message(request: fastapi.Request):
             splited_message = raw_message.split(" ")
         except KeyError:
             return
-        if splited_message[0] != "wy":
+        if splited_message[0] != "云音乐":
             return
         if splited_message[1] == "下载":
             song = song_info(splited_message[2])
@@ -121,16 +154,15 @@ async def Message(request: fastapi.Request):
             except requests.HTTPError:
                 raise fastapi.HTTPException(status_code=400, detail={"success":False,"message":"服务器状态码不是200 OK","target":send_message_result})
             else:
-                """old
                 music_data = requests.post(MUSIC_API_ROOT+f"/download",data={
                     "id": splited_message[2],
                     "quality": "exhigh"
                 }).content
                 mime_type = 'audio/mpeg'
-                b64_data = base64.b64encode(music_data).decode('ascii')
+                b64_data = base64.b64encode(convert_id3_tags_in_memory(music_data)).decode('ascii')
                 data_url = f'data:{mime_type};base64,{b64_data}'
-                """
-                upload_file(f"{MUSIC_API_ROOT}/download?id={splited_message[2]}&quality=exhigh",group,filename,FOLDER)
+                #upload_file(f"{MUSIC_API_ROOT}/download?id={splited_message[2]}&quality=exhigh",group,filename,GROUPS[int(group)])
+                upload_file(data_url,group,filename,GROUPS[int(group)])
                 
 if __name__ == "__main__":
     uvicorn.run(app,host="0.0.0.0",port=7000)
