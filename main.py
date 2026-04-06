@@ -3,11 +3,19 @@ import json
 import fastapi
 import uvicorn
 import re
+import logging
 
 BOT_ROOT = "http://127.0.0.1:3000"          #OneBot HTTP地址
 BOT_TOKEN = "YOUR_TOKEN_HERE"               #OneBot的Token
 MUSIC_API_ROOT = "http://127.0.0.1:5000"    #网易云音乐API项目的地址
 GROUPS = {0:"文件夹ID"}                     #响应群号:文件夹ID
+
+#日志格式设置
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
 
 try:
     health_result = requests.get(MUSIC_API_ROOT+"/health")
@@ -15,13 +23,13 @@ try:
     if not health_result.json()["success"]:
         raise requests.HTTPError
 except requests.HTTPError:
-    print("无法连接到网易云音乐API! (服务器状态码不是200 OK)")
-    print("网易云音乐下载项目地址：https://github.com/Suxiaoqinx/Netease_url")
-    print("请检查运行状态")
+    logging.error("无法连接到网易云音乐API! (服务器状态码不是200 OK)")
+    logging.info("网易云音乐下载项目地址：https://github.com/Suxiaoqinx/Netease_url")
+    logging.warning("请检查运行状态")
 except requests.exceptions.ConnectionError:
-    print("无法连接到网易云音乐API! ")
-    print("网易云音乐下载项目地址：https://github.com/Suxiaoqinx/Netease_url")
-    print("请检查运行状态")
+    logging.error("无法连接到网易云音乐API!")
+    logging.info("网易云音乐下载项目地址：https://github.com/Suxiaoqinx/Netease_url")
+    logging.warning("请检查运行状态")
 
 """
 !!!No planned!!!
@@ -93,9 +101,9 @@ async def Message(request: fastapi.Request):
             url = song["data"]["url"]
             ar_name = song["data"]["ar_name"]
             name = song["data"]["name"]
-            print(f"调用用户：{sender}")
+            logging.info(f"调用用户：{sender}")
             message = f"⚠️准备下载：\n名称：{name}\n歌手：{ar_name}"
-            print(message)
+            logging.info(message)
             try:
                 send_message_result = requests.post(BOT_ROOT+f'/send_group_msg?access_token={BOT_TOKEN}',data=json.dumps(
                     {
